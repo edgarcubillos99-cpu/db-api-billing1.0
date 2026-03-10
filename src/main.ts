@@ -37,7 +37,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document); // 'api' será la ruta en el navegador
 
-  const port = process.env.APP_PORT || process.env.PORT || 3000;
+  const port = process.env.PORT || 3000;
   await app.listen(port);
 }
 bootstrap();
