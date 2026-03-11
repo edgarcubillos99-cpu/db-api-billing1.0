@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: db_billing_api_prod
+    container_name: db_billing_api_pro
     restart: always
     ports:
       - "${PORT}:${PORT}"
