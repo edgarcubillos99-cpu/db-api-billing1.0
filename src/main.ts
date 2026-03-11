@@ -28,6 +28,17 @@ async function bootstrap() {
     .setTitle('Records API')
     .setDescription('API para gestionar y consultar millones de registros transaccionales')
     .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        description: 'Introduce tu Bearer Token (JWT)',
+        in: 'header',
+      },
+      'bearer',
+    )
     .build();
     
   // 3. Crear el documento y montar la interfaz gráfica
