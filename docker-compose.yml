@@ -16,5 +16,6 @@ services:
       DB_NAME: ${DB_NAME}
       JWT_SECRET: ${JWT_SECRET}
       DEFAULT_ADMIN_USER: ${DEFAULT_ADMIN_USER}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD}
     extra_hosts:
       - "host.docker.internal:host-gateway"
