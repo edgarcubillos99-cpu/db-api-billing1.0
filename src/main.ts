@@ -7,19 +7,6 @@ import helmet from 'helmet';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Seguridad: Protege cabeceras HTTP
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: [`'self'`],
-          styleSrc: [`'self'`, `'unsafe-inline'`],
-          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
-        },
-      },
-    }),
-  );
-
   // Seguridad: Habilita CORS
   app.enableCors({
     origin: process.env.FRONTEND_URL || '*', // En producción, cambia '*' por la URL de tu frontend
