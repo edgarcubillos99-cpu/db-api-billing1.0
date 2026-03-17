@@ -7,7 +7,7 @@ export class MfaDto {
   @IsNotEmpty()
   userId: string;
 
-  @ApiProperty({ example: '123456', description: 'Código de 6 dígitos de tu Authenticator' })
+  @ApiProperty({ example: '123456', description: 'Código de 6 dígitos de Microsoft Authenticator (o app TOTP compatible)' })
   @IsString()
   @IsNotEmpty()
   @Length(6, 6)

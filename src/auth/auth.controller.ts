@@ -71,7 +71,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Get('mfa/generate')
-  @ApiOperation({ summary: 'Generar código QR para activar MFA' })
+  @ApiOperation({ summary: 'Generar código QR para activar MFA (Microsoft Authenticator u otra app TOTP)' })
   async generateMfaSecret(@Req() req: any) {
     // 1. Buscamos al usuario en base a su token
     const user = await this.usersService.findOneById(req.user.userId);
@@ -86,7 +86,7 @@ export class AuthController {
     await this.usersService.enableMfa(user.id, secret);
 
     return {
-      message: 'Escanea el código QR con tu aplicación de autenticación',
+      message: 'Escanea el código QR con Microsoft Authenticator (o cualquier app TOTP compatible)',
       qrCodeUrl // Esto es un string base64 que puedes poner en un tag <img> en el frontend
     };
   }

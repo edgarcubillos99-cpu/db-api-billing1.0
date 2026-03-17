@@ -10,6 +10,8 @@ export class MfaService {
 
   /**
    * Genera un nuevo secreto MFA y su correspondiente código QR.
+   * El QR usa el estándar TOTP (RFC 6238), compatible con Microsoft Authenticator,
+   * Google Authenticator y cualquier app que soporte TOTP.
    */
   public async generateMfaSecret(user: User) {
     const secret = generateSecret();
@@ -17,7 +19,7 @@ export class MfaService {
     // El nombre de la app (se puede leer de una variable de entorno)
     const appName = this.configService.get<string>('APP_NAME', 'DB Billing API');
 
-    // Genera la URI estándar para aplicaciones de autenticación
+    // Genera la URI estándar otpauth:// para Microsoft Authenticator y apps TOTP
     const otpauthUrl = generateURI({
       issuer: appName,
       label: user.username,
