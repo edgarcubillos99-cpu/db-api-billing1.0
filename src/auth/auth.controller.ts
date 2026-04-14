@@ -1,4 +1,14 @@
-import { Controller, Post, Body, UnauthorizedException, UseGuards, Req, Get } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UnauthorizedException,
+  UseGuards,
+  Req,
+  Get,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
@@ -26,18 +36,29 @@ export class AuthController {
   @Post('register')
   @ApiOperation({ summary: 'Registrar un nuevo usuario (Requiere token)' })
   @ApiResponse({ status: 201, description: 'Usuario creado exitosamente.' })
-  @ApiResponse({ status: 409, description: 'El nombre de usuario ya existe.' })
+  @ApiResponse({ status: 409, description: 'El nombre de usuario o el correo ya existen.' })
   @ApiResponse({ status: 401, description: 'No autorizado.' })
   async register(@Body() authCredentialsDto: LoginDto) {
     const { username, password } = authCredentialsDto;
-    
-    // Al no pasar un tercer parámetro, los usuarios creados aquí serán Role.USER por defecto
-    const newUser = await this.usersService.create(username, password, UserRole.USER);
-    
+
+    if (!authCredentialsDto.email?.trim()) {
+      throw new BadRequestException(
+        'Los agentes deben incluir `email` (código MFA). El `username` debe coincidir con el valor de `agent` en los registros.',
+      );
+    }
+
+    const newUser = await this.usersService.create(
+      username,
+      password,
+      UserRole.USER,
+      authCredentialsDto.email,
+    );
+
     return {
       message: 'Usuario creado exitosamente',
       userId: newUser.id,
-      username: newUser.username
+      username: newUser.username,
+      email: newUser.email,
     };
   }
 
@@ -55,13 +76,31 @@ export class AuthController {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // 2. Verificamos si tiene MFA activo
+    // 2. MFA: el código solo se envía al `email`
     if (user.isMfaEnabled) {
-      return { 
-        mfaRequired: true, 
-        userId: user.id, 
-        message: 'Se requiere verificación de dos pasos (MFA)' 
-      }; 
+      if (!user.email?.trim()) {
+        throw new BadRequestException(
+          'MFA está activo pero el usuario no tiene `email` configurado. Contacta a un administrador.',
+        );
+      }
+      try {
+        await this.mfaService.issueEmailOtpAndSend(user);
+      } catch (err) {
+        if (
+          err instanceof BadRequestException ||
+          err instanceof ServiceUnavailableException
+        ) {
+          throw err;
+        }
+        throw new BadRequestException(
+          'No se pudo enviar el código MFA. Revisa la configuración SMTP o los logs del servidor.',
+        );
+      }
+      return {
+        mfaRequired: true,
+        userId: user.id,
+        message: 'Se ha enviado un código de verificación al correo asociado a tu usuario.',
+      };
     }
     
     // 3. Si no tiene MFA, generamos y devolvemos el token JWT directamente
@@ -71,59 +110,55 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Get('mfa/generate')
-  @ApiOperation({ summary: 'Generar código QR para activar MFA (Microsoft Authenticator u otra app TOTP)' })
+  @ApiOperation({
+    summary:
+      'Activar MFA por correo electrónico (sin QR; opcionalmente envía correo de confirmación si SMTP está configurado)',
+  })
   async generateMfaSecret(@Req() req: any) {
-    // 1. Buscamos al usuario en base a su token
     const user = await this.usersService.findOneById(req.user.userId);
     if (!user) {
       throw new UnauthorizedException('Usuario no encontrado');
     }
+    if (!user.email?.trim()) {
+      throw new BadRequestException(
+        'Configura el campo `email` para recibir códigos MFA. El `username` debe coincidir con `record.agent` para el aislamiento de datos.',
+      );
+    }
 
-    // 2. Generamos el secreto y el QR
-    const { secret, qrCodeUrl } = await this.mfaService.generateMfaSecret(user);
-    
-    // 3. Guardamos el secreto en la base de datos (y activamos el MFA)
-    await this.usersService.enableMfa(user.id, secret);
-
-    return {
-      message: 'Escanea el código QR con Microsoft Authenticator (o cualquier app TOTP compatible)',
-      qrCodeUrl // Esto es un string base64 que puedes poner en un tag <img> en el frontend
-    };
+    await this.usersService.enableMfa(user.id);
+    return this.mfaService.prepareMfaActivationResponse(user);
   }
 
   @Post('mfa/verify')
-  @ApiOperation({ summary: 'Verificar código MFA' })
-  async verifyMfa(@Body() mfaDto: MfaDto) { // <-- Ya no pedimos @Req() req
-    // Usamos el userId que viene en el Body de la petición
-    const user = await this.usersService.findOneById(mfaDto.userId);
+  @ApiOperation({ summary: 'Verificar código MFA recibido por correo electrónico' })
+  async verifyMfa(@Body() mfaDto: MfaDto) {
+    const user = await this.usersService.verifyAndConsumeMfaCode(
+      mfaDto.userId,
+      mfaDto.mfaCode,
+    );
+
     if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
+      throw new UnauthorizedException('Código MFA inválido o expirado');
     }
 
-    const isValid = this.mfaService.isMfaCodeValid(mfaDto.mfaCode, user);
-    
-    if (!isValid) {
-      throw new UnauthorizedException('Código MFA inválido');
-    }
-
-    // Aquí le devolvemos el token definitivo para que por fin pueda entrar
-    return this.authService.login(user); 
+    return this.authService.login(user);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'), RolesGuard) // <-- 1. Valida el token
   @Roles(UserRole.ADMIN)                   // <-- 2. Exige que sea ADMIN
   @Post('mfa/reset-for-user')
-  @ApiOperation({ summary: 'Apagar el MFA de un usuario que perdió su celular (Solo ADMIN)' })
+  @ApiOperation({ summary: 'Desactivar el MFA por correo de un usuario (solo ADMIN)' })
   @ApiResponse({ status: 200, description: 'MFA reseteado con éxito.' })
   @ApiResponse({ status: 403, description: 'No tienes permisos de Administrador.' })
   async resetMfaForUser(@Body() resetMfaDto: ResetMfaDto) {
     
     await this.usersService.disableMfa(resetMfaDto.userId);
     
-    return { 
-      message: 'MFA desactivado. El usuario ya puede iniciar sesión con su contraseña y generar un nuevo código QR.',
-      userIdReseteado: resetMfaDto.userId
+    return {
+      message:
+        'MFA desactivado. El usuario puede iniciar sesión solo con contraseña o volver a activar MFA por correo.',
+      userIdReseteado: resetMfaDto.userId,
     };
   }
 }

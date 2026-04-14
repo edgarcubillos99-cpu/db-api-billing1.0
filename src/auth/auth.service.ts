@@ -35,15 +35,21 @@ export class AuthService {
    */
   async login(user: any) {
     // El 'sub' (subject) es el estándar en JWT para almacenar el ID del usuario
-    const payload = { username: user.username, sub: user.id, role: user.role };
-    
+    const payload = {
+      username: user.username,
+      sub: user.id,
+      role: user.role,
+      email: user.email ?? null,
+    };
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
         id: user.id,
         username: user.username,
+        email: user.email ?? null,
         role: user.role,
-      }
+      },
     };
   }
 

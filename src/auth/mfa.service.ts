@@ -1,50 +1,57 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { generateSecret, generateURI, verifySync } from 'otplib';
-import * as QRCode from 'qrcode';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { randomInt } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { User } from '../users/entities/user.entity';
+import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
+
+/** Tiempo de vida del código MFA enviado al `email` del usuario. */
+const MFA_OTP_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class MfaService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly mailService: MailService,
+  ) {}
 
-  /**
-   * Genera un nuevo secreto MFA y su correspondiente código QR.
-   * El QR usa el estándar TOTP (RFC 6238), compatible con Microsoft Authenticator,
-   * Google Authenticator y cualquier app que soporte TOTP.
-   */
-  public async generateMfaSecret(user: User) {
-    const secret = generateSecret();
-
-    // El nombre de la app (se puede leer de una variable de entorno)
-    const appName = this.configService.get<string>('APP_NAME', 'DB Billing API');
-
-    // Genera la URI estándar otpauth:// para Microsoft Authenticator y apps TOTP
-    const otpauthUrl = generateURI({
-      issuer: appName,
-      label: user.username,
-      secret,
-    });
-
-    // Convierte esa URI en una imagen Data URL (base64) que el Frontend puede mostrar
-    const qrCodeUrl = await QRCode.toDataURL(otpauthUrl);
-
-    return {
-      secret,
-      qrCodeUrl,
-    };
+  generateSixDigitCode(): string {
+    return randomInt(0, 1_000_000).toString().padStart(6, '0');
   }
 
   /**
-   * Valida un código de 6 dígitos ingresado por el usuario.
+   * Genera OTP de login, lo guarda en `mfaSecret` y lo envía solo al `email`.
    */
-  public isMfaCodeValid(mfaCode: string, user: User): boolean {
-    if (!user.mfaSecret) return false;
+  async issueEmailOtpAndSend(user: User): Promise<void> {
+    const destino = user.email?.trim() || null;
+    if (!destino) {
+      throw new BadRequestException(
+        'El usuario debe tener `email` configurado para recibir códigos MFA.',
+      );
+    }
+    const code = this.generateSixDigitCode();
+    const hash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + MFA_OTP_TTL_MS);
+    const payload = `${expiresAt.getTime()}|${hash}`;
+    await this.usersService.setMfaSecretChallenge(user.id, payload);
+    await this.mailService.sendMfaLoginCode(destino, code);
+  }
 
-    const result = verifySync({
-      token: mfaCode,
-      secret: user.mfaSecret,
-    });
-    return result.valid;
+  /**
+   * Tras activar MFA: correo opcional de confirmación al `email` si SMTP está configurado.
+   */
+  async prepareMfaActivationResponse(
+    user: User,
+  ): Promise<{ message: string; emailSent: boolean; qrCodeUrl: null }> {
+    const destino = user.email?.trim() || null;
+    const emailSent = destino
+      ? await this.mailService.sendMfaActivatedOptional(destino)
+      : false;
+    return {
+      message:
+        'MFA por correo activado. En cada inicio de sesión recibirás un código de 6 dígitos en tu correo.',
+      emailSent,
+      qrCodeUrl: null,
+    };
   }
 }

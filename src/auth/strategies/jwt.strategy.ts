@@ -19,6 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.usersService.findOneById(payload.sub);
     if (!user) throw new UnauthorizedException('Usuario no encontrado o inactivo');
 
-    return { userId: payload.sub, username: payload.username, role: payload.role };
+    return {
+      userId: user.id,
+      username: user.username,
+      email: user.email ?? null,
+      role: user.role,
+    };
   }
 }

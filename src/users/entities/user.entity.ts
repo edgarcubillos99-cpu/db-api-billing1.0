@@ -14,16 +14,20 @@ export class User {
   @Column({ unique: true })
   username: string;
 
+  /** Correo para códigos MFA (obligatorio para agentes). `username` debe coincidir con `record.agent`. */
+  @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
+  email: string | null;
+
   @Column()
   passwordHash: string; // Guardado usando bcrypt
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role: UserRole;
 
-  // Campos para MFA
   @Column({ default: false })
   isMfaEnabled: boolean;
 
-  @Column({ nullable: true })
-  mfaSecret?: string; // El secreto generado por otplib
+  /** MFA por correo: reto pendiente como `caducidadEnMs|hashBcrypt`. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  mfaSecret: string | null;
 }

@@ -7,10 +7,12 @@ import { MfaService } from './mfa.service';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
     UsersModule,
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     
     // Configuración del JWT
@@ -24,7 +26,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, MfaService, JwtStrategy], // <-- Aquí registramos la estrategia
+  providers: [AuthService, MfaService, JwtStrategy],
   exports: [JwtStrategy, PassportModule],
 })
 export class AuthModule {}

@@ -7,7 +7,10 @@ import { UserRole } from '../users/entities/user.entity';
 
 export interface AuthenticatedUser {
   userId: string;
+  /** Debe coincidir con `record.agent` para usuarios con rol USER. */
   username: string;
+  /** Correo para MFA; no se usa en el filtro por agente. */
+  email: string | null;
   role: UserRole;
 }
 
@@ -20,7 +23,8 @@ export class RecordsService {
 
   private applyAgentScope(query: any, currentUser: AuthenticatedUser) {
     if (currentUser.role === UserRole.USER) {
-      query.andWhere('record.agent = :scopedAgent', { scopedAgent: currentUser.username });
+      const scopedAgent = currentUser.username?.trim() || '';
+      query.andWhere('record.agent = :scopedAgent', { scopedAgent });
     }
   }
 
